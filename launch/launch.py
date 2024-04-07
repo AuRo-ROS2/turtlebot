@@ -6,7 +6,8 @@ def generate_launch_description():
         Node(
             package='usb_cam',
             executable='usb_cam_node_exe',
-            name='usb_cam_node'
+            name='usb_cam_node',
+            parameters=[{'video_device': '/dev/video11'}] 
         ),
        
         Node(
