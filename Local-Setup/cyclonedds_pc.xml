@@ -1,0 +1,8 @@
+<CycloneDDS>
+    <Domain>
+        <General>
+	    <NetworkInterfaceAddress>wlo1</NetworkInterfaceAddress>
+            <DontRoute>true</DontRoute>
+        </General>
+    </Domain>
+</CycloneDDS>
