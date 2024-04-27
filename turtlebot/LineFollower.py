@@ -126,7 +126,7 @@ class WebcamControl():
         #crops the image (calculate where in the frame the line will be)
 
         #determines the center of the line
-        box1 = img[IMG_H-IMG_H_NARROW:IMG_H, ]
+        box1 = img[IMG_H-8:IMG_H, ]
 
 
         #determines which direction to turn
