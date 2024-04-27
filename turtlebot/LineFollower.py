@@ -34,17 +34,21 @@ K = ANGULAR_VEL * 2
 
 
 
+
+
+
 class WebcamControl():
     def __init__(self):
         self.mutex = Lock()
         rclpy.init()
 
-        
+        self.TURN_FOUND = False
+        self.LEFT_TURN = True
         self.node = rclpy.create_node('line_follower_node')
         #recieves image from camera
         self.img_sub = self.node.create_subscription(Image, '/oakd/rgb/preview/image_raw', self.process_image, 5)
         self.img_line = self.node.create_publisher(Image, '/imgage/wide', 3)
-        self.img_turn = self.node.create_publisher(Image, '/imgage/turn', 3)
+        
         
         #publishes to create3 to operate robot
         self.cmd_vel_pub = self.node.create_publisher(Twist, 'cmd_vel', qos_profile=qos_profile_sensor_data)
@@ -57,15 +61,17 @@ class WebcamControl():
             
         except KeyboardInterrupt:
             print("Rospy Spin Shut down")
-
+    def move_to_edge(self):
+        for _ in range(3):
+            command = Twist()
+            command.linear.x = LINEAR_VEL
+            command.angular.z = 0
+            self.cmd_vel_pub.publish(command)
+            time.sleep(0.2)
     def process_image(self, input_image):
         print("recieved image")
 
-        #command = Twist()
-        #command.linear.x = 0.5
-        #self.cmdel_pub.publish(command)
-        
-
+    
         try:
             img = self.bridge.imgmsg_to_cv2(input_image, "bgr8")
             print("image shape", img.shape)
@@ -88,45 +94,56 @@ class WebcamControl():
                 command.angular.z = K * error_norm
                 self.cmd_vel_pub.publish(command)
             else:
+                #gets to end of the line if a turn is found 
+                if self.TURN_FOUND:
+                    self.move_to_edge()
+                    self.TURN_FOUND=False
+
                 command = Twist()
                 command.linear.x = 0.0
                 #if line is on the left rotate at angular velocity 
-                
-                command.angular.z = ANGULAR_VEL
+                if self.LEFT_TURN:
+                    command.angular.z = ANGULAR_VEL
+                else:
+                    command.angular.z = -ANGULAR_VEL
                  
                
-                
+        
                 #if line is on the right rotate at negative angular velocity
                 #command.angular.z = -ANGULAR_VEL
                 self.cmd_vel_pub.publish(command)
                 
                 
-                self.cmd_vel_pub.publish(command)
+                #self.cmd_vel_pub.publish(command)
                 
             
         
     
+                
+
     def get_line_pos(self, img):
         H, W, _ = img.shape
         #crops the image (calculate where in the frame the line will be)
 
         #determines the center of the line
         box1 = img[IMG_H-IMG_H_NARROW:IMG_H, ]
+
+
         #determines which direction to turn
-        box2 = img[175:225, ]
+        left_box = img[175:225, ]
 
         gray = cv2.cvtColor(box1, cv2.COLOR_BGR2GRAY)
-        gray2 = cv2.cvtColor(box2, cv2.COLOR_BGR2GRAY)
+        gray2 = cv2.cvtColor(left_box, cv2.COLOR_BGR2GRAY)
         mask = cv2.inRange(box1, RGB_LOW, RGB_HIGH)
-        mask2 = cv2.inRange(box2, RGB_LOW, RGB_HIGH)
+        mask2 = cv2.inRange(left_box, RGB_LOW, RGB_HIGH)
         line_img = cv2.bitwise_and(gray, mask)
         turn_img = cv2.bitwise_and(gray2, mask2)
         
         imageOut = self.bridge.cv2_to_imgmsg(line_img)
         self.img_line.publish(imageOut)
 
-        turnOut = self.bridge.cv2_to_imgmsg(turn_img)
-        self.img_turn.publish(turnOut)
+        #turnOut = self.bridge.cv2_to_imgmsg(turn_img)
+        #self.img.publish(turnOut)
         
         
 
@@ -135,10 +152,12 @@ class WebcamControl():
         
         if len(contours) > 0:
             line = max(contours, key=cv2.contourArea)
+            #recieve the most common value and how many values it has
+
+                #if the range around 
             print("contours Area", cv2.contourArea(line))
             if cv2.contourArea(line) > 30:
                 moments = cv2.moments(line)
-                print(moments)
                 cx = int(moments['m10']/moments['m00'])
                 #cy = int(moments['m01']/moments['m00'])
                 return cx
