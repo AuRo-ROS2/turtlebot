@@ -37,19 +37,20 @@ K = ANGULAR_VEL * 2
 
 
 
+
 class WebcamControl():
     def __init__(self):
         self.mutex = Lock()
         rclpy.init()
-
+       
         self.TURN_FOUND = False
         self.LEFT_TURN = True
         self.node = rclpy.create_node('line_follower_node')
         #recieves image from camera
         self.img_sub = self.node.create_subscription(Image, '/oakd/rgb/preview/image_raw', self.process_image, 5)
-        self.img_line = self.node.create_publisher(Image, '/imgage/wide', 3)
-        
-        
+        self.img_line = self.node.create_publisher(Image, '/image/wide', 3)
+        self.states = ["follow line", "go to corner", "rotate"]
+        self.state = self.states[1]
         #publishes to create3 to operate robot
         self.cmd_vel_pub = self.node.create_publisher(Twist, 'cmd_vel', qos_profile=qos_profile_sensor_data)
         
@@ -65,7 +66,7 @@ class WebcamControl():
         for _ in range(3):
             command = Twist()
             command.linear.x = LINEAR_VEL
-            command.angular.z = 0
+            command.angular.z = 0.0
             self.cmd_vel_pub.publish(command)
             time.sleep(0.2)
     def process_image(self, input_image):
@@ -77,49 +78,36 @@ class WebcamControl():
             print("image shape", img.shape)
         except CvBridgeError as e:
             print(e)
-
+        
 
         if img is None:
             print ('frame dropped, skipping tracking')
         else:
-            cx = self.get_line_pos(img)
-            print("line position (pixel)", cx)
-            if cx is not None:
-                #delta pixels of line from center
-                error = IMG_W/2 - cx
-                error_norm = error / (IMG_W / 2.0)
-                
-                command = Twist()
-                command.linear.x = LINEAR_VEL * (1 - np.abs(error_norm))
-                command.angular.z = K * error_norm
-                #self.cmd_vel_pub.publish(command)
-            else:
-                #gets to end of the line if a turn is found 
-                if self.TURN_FOUND:
-                    self.move_to_edge()
-                    self.TURN_FOUND=False
-
-                command = Twist()
-                command.linear.x = 0.0
-                #if line is on the left rotate at angular velocity 
-                if self.LEFT_TURN:
-                    command.angular.z = ANGULAR_VEL
-                else:
-                    command.angular.z = -ANGULAR_VEL
-                 
-               
-        
-                #if line is on the right rotate at negative angular velocity
-                #command.angular.z = -ANGULAR_VEL
-                #self.cmd_vel_pub.publish(command)
-                
-                
-                #self.cmd_vel_pub.publish(command)
-                
             
-        
-    
-                
+            match self.state:
+                case "follow line":
+                    cx = self.get_line_pos(img)
+                    print("line position (pixel)", cx)
+                    if cx is not None:
+                        #delta pixels of line from center
+                        error = IMG_W/2 - cx
+                        error_norm = error / (IMG_W / 2.0)
+                        
+                        command = Twist()
+                        command.linear.x = LINEAR_VEL * (1 - np.abs(error_norm))
+                        command.angular.z = K * error_norm
+                        #self.cmd_vel_pub.publish(command)
+                case "go to corner":
+                    self.move_to_edge()
+                    self.states = self.states[1]
+                case "rotate":
+                    command = Twist()
+                    command.linear.x = 0.0
+                    #if line is on the left rotate at angular velocity 
+                    if self.LEFT_TURN:
+                        command.angular.z = ANGULAR_VEL
+                    else:
+                        command.angular.z = -ANGULAR_VEL
 
     def get_line_pos(self, img):
         H, W, _ = img.shape
@@ -128,19 +116,13 @@ class WebcamControl():
         #determines the center of the line
         box1 = img[IMG_H-8:IMG_H, ]
 
-
-       
-
         gray = cv2.cvtColor(box1, cv2.COLOR_BGR2GRAY)
         mask = cv2.inRange(box1, RGB_LOW, RGB_HIGH)
         line_img = cv2.bitwise_and(gray, mask)
         imageOut = self.bridge.cv2_to_imgmsg(line_img)
         self.img_line.publish(imageOut)
 
-        
-        
-        
-
+    
         contours, _ = cv2.findContours(np.uint8(line_img), cv2.RETR_TREE, cv2.CHAIN_APPROX_NONE)
         
         
