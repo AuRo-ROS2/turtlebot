@@ -92,7 +92,7 @@ class WebcamControl():
                 command = Twist()
                 command.linear.x = LINEAR_VEL * (1 - np.abs(error_norm))
                 command.angular.z = K * error_norm
-                self.cmd_vel_pub.publish(command)
+                #self.cmd_vel_pub.publish(command)
             else:
                 #gets to end of the line if a turn is found 
                 if self.TURN_FOUND:
@@ -111,7 +111,7 @@ class WebcamControl():
         
                 #if line is on the right rotate at negative angular velocity
                 #command.angular.z = -ANGULAR_VEL
-                self.cmd_vel_pub.publish(command)
+                #self.cmd_vel_pub.publish(command)
                 
                 
                 #self.cmd_vel_pub.publish(command)
@@ -129,21 +129,15 @@ class WebcamControl():
         box1 = img[IMG_H-8:IMG_H, ]
 
 
-        #determines which direction to turn
-        left_box = img[175:225, ]
+       
 
         gray = cv2.cvtColor(box1, cv2.COLOR_BGR2GRAY)
-        gray2 = cv2.cvtColor(left_box, cv2.COLOR_BGR2GRAY)
         mask = cv2.inRange(box1, RGB_LOW, RGB_HIGH)
-        mask2 = cv2.inRange(left_box, RGB_LOW, RGB_HIGH)
         line_img = cv2.bitwise_and(gray, mask)
-        turn_img = cv2.bitwise_and(gray2, mask2)
-        
         imageOut = self.bridge.cv2_to_imgmsg(line_img)
         self.img_line.publish(imageOut)
 
-        #turnOut = self.bridge.cv2_to_imgmsg(turn_img)
-        #self.img.publish(turnOut)
+        
         
         
 
@@ -152,11 +146,9 @@ class WebcamControl():
         
         if len(contours) > 0:
             line = max(contours, key=cv2.contourArea)
-            #recieve the most common value and how many values it has
-
-                #if the range around 
+            
             print("contours Area", cv2.contourArea(line))
-            if cv2.contourArea(line) > 30:
+            if cv2.contourArea(line) > 20:
                 moments = cv2.moments(line)
                 cx = int(moments['m10']/moments['m00'])
                 #cy = int(moments['m01']/moments['m00'])
