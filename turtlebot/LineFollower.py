@@ -32,7 +32,7 @@ IMG_H_NARROW = 50
 IMG_W_TURN = 250
 IMG_H_TURN = 30
 
-K = ANGULAR_VEL * 2
+K = ANGULAR_VEL * 3
 
 
 
@@ -179,8 +179,7 @@ class WebcamControl():
             if (np.mean(self.turn_buffer) <= 3):
                 print("turn_detected")
                 self.turn_detected = True
-                while (1):
-                    pass
+                exit()
 
         old_contours, _ = cv2.findContours(self.prev_img_line, cv2.RETR_TREE, cv2.CHAIN_APPROX_NONE)
         if len(old_contours) > 0:
