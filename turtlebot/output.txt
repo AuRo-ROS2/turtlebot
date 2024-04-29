@@ -1,0 +1,2 @@
+Node is running
+Rospy Spin Shut down

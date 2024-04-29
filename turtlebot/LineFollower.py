@@ -12,8 +12,9 @@ from cv_bridge import CvBridge, CvBridgeError
 import time
 
 
-LINEAR_VEL = 1.5
+LINEAR_VEL = 2.0
 ANGULAR_VEL = 0.4
+
 RGB_LOW = (0,0,0)
 RGB_HIGH = (255,180,150)
 
@@ -50,10 +51,13 @@ class WebcamControl():
         self.img_sub = self.node.create_subscription(Image, '/oakd/rgb/preview/image_raw', self.process_image, 5)
         self.img_line = self.node.create_publisher(Image, '/image/wide', 3)
         self.states = ["follow line", "go to corner", "rotate"]
-        self.state = self.states[1]
+        self.state = self.states[0]
         #publishes to create3 to operate robot
         self.cmd_vel_pub = self.node.create_publisher(Twist, 'cmd_vel', qos_profile=qos_profile_sensor_data)
-        
+        self.prevmean = [125, 125, 125]
+        self.prevline = [125, 125, 125]
+        self.skipframe = 0
+
         self.bridge = CvBridge()
         
         try:
@@ -63,51 +67,80 @@ class WebcamControl():
         except KeyboardInterrupt:
             print("Rospy Spin Shut down")
     def move_to_edge(self):
-        for _ in range(3):
+        for _ in range(6):
             command = Twist()
             command.linear.x = LINEAR_VEL
             command.angular.z = 0.0
             self.cmd_vel_pub.publish(command)
+            
             time.sleep(0.2)
     def process_image(self, input_image):
-        print("recieved image")
-
-    
+        #print("recieved image")
         try:
             img = self.bridge.imgmsg_to_cv2(input_image, "bgr8")
-            print("image shape", img.shape)
+            #print("image shape", img.shape)
         except CvBridgeError as e:
             print(e)
         
-
         if img is None:
-            print ('frame dropped, skipping tracking')
+            print('frame dropped, skipping tracking')
         else:
             
             match self.state:
                 case "follow line":
                     cx = self.get_line_pos(img)
-                    print("line position (pixel)", cx)
+                    #print("line position (pixel)", cx)
+                    #line is detected somewhere
                     if cx is not None:
                         #delta pixels of line from center
                         error = IMG_W/2 - cx
                         error_norm = error / (IMG_W / 2.0)
-                        
                         command = Twist()
                         command.linear.x = LINEAR_VEL * (1 - np.abs(error_norm))
                         command.angular.z = K * error_norm
-                        #self.cmd_vel_pub.publish(command)
+                        self.cmd_vel_pub.publish(command)
+                        
+
+                        
+                        self.prevmean.append(cx)
+                        self.prevline.append(cx)
+                        self.prevmean = self.prevmean[-3:]
+                        self.prevmean = self.prevmean[-10:]
+
+                          
+
+                    #no line is detected
+                    else: 
+                        mean = np.mean(self.prevmean)
+                        line = np.median(self.prevline)
+                        print(mean)
+                        if (mean>line):
+                            self.LEFT_TURN = False
+                        else:
+                            self.LEFT_TURN = True
+                        self.state = self.states[1]
                 case "go to corner":
+                   
                     self.move_to_edge()
-                    self.states = self.states[1]
+                    self.state = self.states[2]
+                    
                 case "rotate":
                     command = Twist()
                     command.linear.x = 0.0
                     #if line is on the left rotate at angular velocity 
+                    
                     if self.LEFT_TURN:
                         command.angular.z = ANGULAR_VEL
                     else:
                         command.angular.z = -ANGULAR_VEL
+                    self.cmd_vel_pub.publish(command)
+                    cx = self.get_line_pos(img)
+                    if cx is None:
+                        cx = 0
+                        
+                    if (122 < cx < 128):
+                        self.state = self.states[0]
+
 
     def get_line_pos(self, img):
         H, W, _ = img.shape
@@ -129,9 +162,10 @@ class WebcamControl():
         if len(contours) > 0:
             line = max(contours, key=cv2.contourArea)
             
-            print("contours Area", cv2.contourArea(line))
+            #print("contours Area", cv2.contourArea(line))
             if cv2.contourArea(line) > 20:
                 moments = cv2.moments(line)
+
                 cx = int(moments['m10']/moments['m00'])
                 #cy = int(moments['m01']/moments['m00'])
                 return cx
