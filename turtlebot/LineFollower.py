@@ -61,6 +61,11 @@ class WebcamControl():
         self.prevline = [125, 125, 125]
         self.skipframe = 0
 
+        self.prev_img_line = np.empty((8,250), dtype=np.uint8)
+        self.turn_buffer = [4, 4, 4]
+        self.turn_buffer_index = 0
+        self.turn_detected = False
+
         self.bridge = CvBridge()
         
         try:
@@ -101,7 +106,8 @@ class WebcamControl():
                         command = Twist()
                         command.linear.x = LINEAR_VEL * (1 - np.abs(error_norm))
                         command.angular.z = K * error_norm
-                        # self.cmd_vel_pub.publish(command)
+                        if (not self.turn_detected):
+                            self.cmd_vel_pub.publish(command)
                         
 
                         self.prevmean.append(cx)
@@ -135,7 +141,7 @@ class WebcamControl():
                         command.angular.z = ANGULAR_VEL
                     else:
                         command.angular.z = -ANGULAR_VEL
-                    self.cmd_vel_pub.publish(command)
+                    # self.cmd_vel_pub.publish(command)
                     cx = self.get_line_pos(img)
                     if cx is None:
                         cx = 0
@@ -161,31 +167,25 @@ class WebcamControl():
         if len(contours) > 0:
             c = max(contours, key=cv2.contourArea)
             peri = cv2.arcLength(c, True)
-            epsilon = .05 * peri
+            epsilon = .04 * peri
             approx = cv2.approxPolyDP(c, epsilon, True)
-            print(f"Corners detected: {len(approx)}")
-
-        if len(contours) > 0:
-
-            # points = np.squeeze(contours)
-
-            # y = points[:,0]
-
-            # x = points[:,1]
-
-            # top_x, top_y = np.min(x), np.min(y)
-
-            # bottom_x, bottom_y = np.max(X), np.max(y)
+            if (len(approx) == 4):
+                self.prev_img_line = np.uint8(line_img)
             
-            # print("Top Point ")
+            self.turn_buffer[self.turn_buffer_index] = len(approx)
 
-            # box = np.uint8(line_img)[top_y:bottom_y + 1, top_x:bottom_x + 1]
+            self.turn_buffer_index = (self.turn_buffer_index + 1) % 3
 
-            # image_contour_out = self.bridge.cv2_to_imgmsg(imageContour)
+            if (np.mean(self.turn_buffer) <= 3):
+                print("turn_detected")
+                self.turn_detected = True
+                while (1):
+                    pass
 
-            # self.img_contour.publish(image_contour_out)
+        old_contours, _ = cv2.findContours(self.prev_img_line, cv2.RETR_TREE, cv2.CHAIN_APPROX_NONE)
+        if len(old_contours) > 0:
 
-            line = max(contours, key=cv2.contourArea)
+            line = max(old_contours, key=cv2.contourArea)
             
             #print("contours Area", cv2.contourArea(line))
             if cv2.contourArea(line) > 20:
@@ -195,7 +195,7 @@ class WebcamControl():
                 #cy = int(moments['m01']/moments['m00'])
                 return cx
         else: 
-            return 0  
+            return 20  
         
                 
                 
