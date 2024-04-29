@@ -10,6 +10,7 @@ from geometry_msgs.msg import Twist
 from sensor_msgs.msg import Image
 from cv_bridge import CvBridge, CvBridgeError
 import time
+import imutils
 
 
 LINEAR_VEL = 2.0
@@ -50,6 +51,8 @@ class WebcamControl():
         #recieves image from camera
         self.img_sub = self.node.create_subscription(Image, '/oakd/rgb/preview/image_raw', self.process_image, 5)
         self.img_line = self.node.create_publisher(Image, '/image/wide', 3)
+        self.img_contour = self.node.create_publisher(Image, '/image/contour', 3)
+        
         self.states = ["follow line", "go to corner", "rotate"]
         self.state = self.states[0]
         #publishes to create3 to operate robot
@@ -71,7 +74,7 @@ class WebcamControl():
             command = Twist()
             command.linear.x = LINEAR_VEL
             command.angular.z = 0.0
-            self.cmd_vel_pub.publish(command)
+            # self.cmd_vel_pub.publish(command)
             
             time.sleep(0.2)
     def process_image(self, input_image):
@@ -98,10 +101,9 @@ class WebcamControl():
                         command = Twist()
                         command.linear.x = LINEAR_VEL * (1 - np.abs(error_norm))
                         command.angular.z = K * error_norm
-                        self.cmd_vel_pub.publish(command)
+                        # self.cmd_vel_pub.publish(command)
                         
 
-                        
                         self.prevmean.append(cx)
                         self.prevline.append(cx)
                         self.prevmean = self.prevmean[-3:]
@@ -155,11 +157,34 @@ class WebcamControl():
         imageOut = self.bridge.cv2_to_imgmsg(line_img)
         self.img_line.publish(imageOut)
 
-    
         contours, _ = cv2.findContours(np.uint8(line_img), cv2.RETR_TREE, cv2.CHAIN_APPROX_NONE)
-        
-        
         if len(contours) > 0:
+            c = max(contours, key=cv2.contourArea)
+            peri = cv2.arcLength(c, True)
+            epsilon = .05 * peri
+            approx = cv2.approxPolyDP(c, epsilon, True)
+            print(f"Corners detected: {len(approx)}")
+
+        if len(contours) > 0:
+
+            # points = np.squeeze(contours)
+
+            # y = points[:,0]
+
+            # x = points[:,1]
+
+            # top_x, top_y = np.min(x), np.min(y)
+
+            # bottom_x, bottom_y = np.max(X), np.max(y)
+            
+            # print("Top Point ")
+
+            # box = np.uint8(line_img)[top_y:bottom_y + 1, top_x:bottom_x + 1]
+
+            # image_contour_out = self.bridge.cv2_to_imgmsg(imageContour)
+
+            # self.img_contour.publish(image_contour_out)
+
             line = max(contours, key=cv2.contourArea)
             
             #print("contours Area", cv2.contourArea(line))
