@@ -79,8 +79,7 @@ class WebcamControl():
             command = Twist()
             command.linear.x = LINEAR_VEL
             command.angular.z = 0.0
-            # self.cmd_vel_pub.publish(command)
-            
+            self.cmd_vel_pub.publish(command)          
             time.sleep(0.2)
     def process_image(self, input_image):
         #print("recieved image")
@@ -93,14 +92,13 @@ class WebcamControl():
         if img is None:
             print('frame dropped, skipping tracking')
         else:
-            
             match self.state:
                 case "follow line":
                     cx = self.get_line_pos(img)
                     #print("line position (pixel)", cx)
                     #line is detected somewhere
                     if cx is not None:
-                        #delta pixels of line from center
+                            #delta pixels of line from center
                         error = IMG_W/2 - cx
                         error_norm = error / (IMG_W / 2.0)
                         command = Twist()
@@ -108,27 +106,33 @@ class WebcamControl():
                         command.angular.z = K * error_norm
                         if (not self.turn_detected):
                             self.cmd_vel_pub.publish(command)
-                        
+                        else:
+                            if (cx > 125):
+                                self.LEFT_TURN = False
+                            else:
+                                self.LEFT_TURN = True
+                            self.state = self.states[1]
 
-                        self.prevmean.append(cx)
-                        self.prevline.append(cx)
-                        self.prevmean = self.prevmean[-3:]
-                        self.prevmean = self.prevmean[-10:]
+                    else:
+                        pass
+                        # self.prevmean.append(cx)
+                        # self.prevline.append(cx)
+                        # self.prevmean = self.prevmean[-3:]
+                        # self.prevmean = self.prevmean[-10:]
 
                           
 
                     #no line is detected
-                    else: 
-                        mean = np.mean(self.prevmean)
-                        line = np.median(self.prevline)
-                        print(mean)
-                        if (mean>line):
-                            self.LEFT_TURN = False
-                        else:
-                            self.LEFT_TURN = True
-                        self.state = self.states[1]
+                    # else: 
+                    #     mean = np.mean(self.prevmean)
+                    #     line = np.median(self.prevline)
+                    #     print(mean)
+                    #     if (mean>line):
+                    #         self.LEFT_TURN = False
+                    #     else:
+                    #         self.LEFT_TURN = True
+                    #     self.state = self.states[1]
                 case "go to corner":
-                   
                     self.move_to_edge()
                     self.state = self.states[2]
                     
@@ -141,12 +145,13 @@ class WebcamControl():
                         command.angular.z = ANGULAR_VEL
                     else:
                         command.angular.z = -ANGULAR_VEL
-                    # self.cmd_vel_pub.publish(command)
+                    self.cmd_vel_pub.publish(command)
                     cx = self.get_line_pos(img)
                     if cx is None:
                         cx = 0
                         
                     if (122 < cx < 128):
+                        self.turn_detected = False
                         self.state = self.states[0]
 
 
@@ -156,7 +161,6 @@ class WebcamControl():
 
         #determines the center of the line
         box1 = img[IMG_H-8:IMG_H, ]
-
         gray = cv2.cvtColor(box1, cv2.COLOR_BGR2GRAY)
         mask = cv2.inRange(box1, RGB_LOW, RGB_HIGH)
         line_img = cv2.bitwise_and(gray, mask)
@@ -164,37 +168,73 @@ class WebcamControl():
         self.img_line.publish(imageOut)
 
         contours, _ = cv2.findContours(np.uint8(line_img), cv2.RETR_TREE, cv2.CHAIN_APPROX_NONE)
+        
         if len(contours) > 0:
             c = max(contours, key=cv2.contourArea)
             peri = cv2.arcLength(c, True)
             epsilon = .04 * peri
             approx = cv2.approxPolyDP(c, epsilon, True)
-            if (len(approx) == 4):
-                self.prev_img_line = np.uint8(line_img)
-            
-            self.turn_buffer[self.turn_buffer_index] = len(approx)
+            if(not self.turn_detected):
+                if (len(approx) == 4):
+                    self.prev_img_line = np.uint8(line_img)
+                
+                self.turn_buffer[self.turn_buffer_index] = len(approx)
 
-            self.turn_buffer_index = (self.turn_buffer_index + 1) % 3
+                self.turn_buffer_index = (self.turn_buffer_index + 1) % 3
 
-            if (np.mean(self.turn_buffer) <= 3):
-                print("turn_detected")
-                self.turn_detected = True
-                exit()
+                img_mask_xor = cv2.bitwise_xor(self.prev_img_line, line_img)
 
-        old_contours, _ = cv2.findContours(self.prev_img_line, cv2.RETR_TREE, cv2.CHAIN_APPROX_NONE)
-        if len(old_contours) > 0:
+                mask1 = np.ones((8,110), dtype=np.uint8)
+                mask2 = np.zeros((8,30), dtype=np.uint8)
+                mask3 = np.ones((8,110), dtype=np.uint8)
+                final_mask = np.concatenate((mask1,mask2, mask3), axis=1)
 
-            line = max(old_contours, key=cv2.contourArea)
-            
-            #print("contours Area", cv2.contourArea(line))
-            if cv2.contourArea(line) > 20:
-                moments = cv2.moments(line)
+                img_mask_final = cv2.bitwise_and(img_mask_xor, final_mask)
 
-                cx = int(moments['m10']/moments['m00'])
-                #cy = int(moments['m01']/moments['m00'])
-                return cx
-        else: 
-            return 20  
+                image_mask_out = self.bridge.cv2_to_imgmsg(img_mask_xor)
+
+                self.img_contour.publish(image_mask_out)
+
+                if (np.mean(self.turn_buffer) <= 3):
+                    print("turn_detected")
+                    # exit()
+                    and_contours, _ = cv2.findContours(np.uint8(img_mask_final), cv2.RETR_TREE, cv2.CHAIN_APPROX_NONE)
+                    line = max(and_contours, key=cv2.contourArea)
+                    moments = cv2.moments(line)
+                    if moments['m00'] != 0:
+                        self.turn_detected = True
+                        self.turn_buffer = [4,4,4]
+                        self.prev_img_line = np.empty((8,250), dtype=np.uint8)
+                        cx = int(moments['m10']/moments['m00'])
+                        print(f"mean: {cx}")
+                        return cx
+                old_contours, _ = cv2.findContours(self.prev_img_line, cv2.RETR_TREE, cv2.CHAIN_APPROX_NONE)
+                if len(old_contours) > 0:
+
+                    line = max(old_contours, key=cv2.contourArea)
+                    
+                    #print("contours Area", cv2.contourArea(line))
+                    # if cv2.contourArea(line) > 20:
+                    moments = cv2.moments(line)
+
+                    cx = int(moments['m10']/moments['m00'])
+                    #cy = int(moments['m01']/moments['m00'])
+                    return cx
+            else:
+                line = max(contours, key=cv2.contourArea)
+                if cv2.contourArea(line) > 20:
+                    moments = cv2.moments(line)
+                    cx = int(moments['m10']/moments['m00'])
+                    return cx
+        else:
+            return None
+
+
+
+
+        
+        # else: 
+        #     return 0  
         
                 
                 
