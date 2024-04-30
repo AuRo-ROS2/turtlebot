@@ -187,7 +187,11 @@ class WebcamControl():
                 mask1 = np.ones((8,110), dtype=np.uint8)
                 mask2 = np.zeros((8,30), dtype=np.uint8)
                 mask3 = np.ones((8,110), dtype=np.uint8)
-                final_mask = np.concatenate((mask1,mask2, mask3), axis=1)
+                and_mask = np.concatenate((mask1,mask2, mask3), axis=1)
+                print(f"and mask shape: {and_mask.shape}")
+                print(f"img xor mask mean: {np.mean(and_mask_xor)}")
+                print(f"img xor mask shape: {img_mask_xor.shape}")
+                print(f"img xor mask mean: {np.mean(img_mask_xor)}")
 
                 img_mask_final = cv2.bitwise_and(img_mask_xor, final_mask)
 
