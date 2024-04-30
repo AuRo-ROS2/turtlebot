@@ -14,7 +14,7 @@ import imutils
 
 
 LINEAR_VEL = 2.0
-ANGULAR_VEL = 0.4
+ANGULAR_VEL = 0.5
 
 RGB_LOW = (0,0,0)
 RGB_HIGH = (255,180,150)
@@ -62,6 +62,7 @@ class WebcamControl():
         self.skipframe = 0
 
         self.prev_img_line = np.empty((8,250), dtype=np.uint8)
+        self.prev_img_line_mean = 125
         self.turn_buffer = [4, 4, 4]
         self.turn_buffer_index = 0
         self.turn_detected = False
@@ -107,10 +108,6 @@ class WebcamControl():
                         if (not self.turn_detected):
                             self.cmd_vel_pub.publish(command)
                         else:
-                            if (cx > 125):
-                                self.LEFT_TURN = False
-                            else:
-                                self.LEFT_TURN = True
                             self.state = self.states[1]
 
                     else:
@@ -184,17 +181,6 @@ class WebcamControl():
 
                 img_mask_xor = cv2.bitwise_xor(self.prev_img_line, line_img)
 
-                mask1 = np.ones((8,110), dtype=np.uint8)
-                mask2 = np.zeros((8,30), dtype=np.uint8)
-                mask3 = np.ones((8,110), dtype=np.uint8)
-                and_mask = np.concatenate((mask1,mask2, mask3), axis=1)
-                print(f"and mask shape: {and_mask.shape}")
-                print(f"img xor mask mean: {np.mean(and_mask_xor)}")
-                print(f"img xor mask shape: {img_mask_xor.shape}")
-                print(f"img xor mask mean: {np.mean(img_mask_xor)}")
-
-                img_mask_final = cv2.bitwise_and(img_mask_xor, final_mask)
-
                 image_mask_out = self.bridge.cv2_to_imgmsg(img_mask_xor)
 
                 self.img_contour.publish(image_mask_out)
@@ -202,16 +188,22 @@ class WebcamControl():
                 if (np.mean(self.turn_buffer) <= 3):
                     print("turn_detected")
                     # exit()
-                    and_contours, _ = cv2.findContours(np.uint8(img_mask_final), cv2.RETR_TREE, cv2.CHAIN_APPROX_NONE)
-                    line = max(and_contours, key=cv2.contourArea)
-                    moments = cv2.moments(line)
-                    if moments['m00'] != 0:
-                        self.turn_detected = True
-                        self.turn_buffer = [4,4,4]
-                        self.prev_img_line = np.empty((8,250), dtype=np.uint8)
-                        cx = int(moments['m10']/moments['m00'])
-                        print(f"mean: {cx}")
-                        return cx
+                    white_pixels = np.where(img_mask_xor > 0)
+                    if white_pixels[0].size > 0:
+                        x_coords = white_pixels[1]
+                        max_x = np.max(x_coords)
+                        min_x = np.min(x_coords)
+
+                        norm_max_x = max_x - self.prev_img_line_mean
+                        norm_min_x = self.prev_img_line_mean - min_x
+                        
+                        if (norm_max_x > norm_min_x):
+                            self.turn_detected = True
+                            self.LEFT_TURN = False
+                        else:
+                            self.turn_detected = True
+                            self.LEFT_TURN = True
+
                 old_contours, _ = cv2.findContours(self.prev_img_line, cv2.RETR_TREE, cv2.CHAIN_APPROX_NONE)
                 if len(old_contours) > 0:
 
@@ -223,6 +215,7 @@ class WebcamControl():
 
                     cx = int(moments['m10']/moments['m00'])
                     #cy = int(moments['m01']/moments['m00'])
+                    self.prev_img_line_mean = cx
                     return cx
             else:
                 line = max(contours, key=cv2.contourArea)
